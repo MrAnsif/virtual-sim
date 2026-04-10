@@ -271,31 +271,30 @@ def draw_preview(frame, calib, state):
     overlay = frame.copy()
 
     # ── Zone boundaries
-    ax = int(calib.get("accel_zone_x", w * 0.7))
-    bx = int(calib.get("brake_zone_x", w * 0.4))
+    ax = int(calib.get("accel_zone_x", w * 0.7))   # right edge — accel starts here
+    bx = int(calib.get("brake_zone_x", w * 0.4))    # center — brake zone up to here
     floor_y = int(calib.get("floor_y", h - 20))
 
-    # Accel zone (right) — green tint
+    # Accel zone (RIGHT side) — green tint
     cv2.rectangle(overlay, (ax, 0), (w, floor_y), (0, 80, 0), -1)
-    # Brake zone (middle-left) — red tint
-    cv2.rectangle(overlay, (bx - ZONE_DEAD_BAND, 0),
-                  (ax - ZONE_DEAD_BAND, floor_y), (0, 0, 80), -1)
-    # Dead zone — yellow tint
-    cv2.rectangle(overlay, (ax - ZONE_DEAD_BAND, 0),
-                  (ax, floor_y), (0, 80, 80), -1)
+
+    # Dead zone between brake and accel — yellow tint
+    cv2.rectangle(overlay, (bx, 0), (ax, floor_y), (0, 80, 80), -1)
+
+    # Brake zone (CENTER / left of bx) — red tint
+    cv2.rectangle(overlay, (0, 0), (bx, floor_y), (0, 0, 80), -1)
 
     cv2.addWeighted(overlay, 0.3, frame, 0.7, 0, frame)
 
-    # Floor line
+    # Divider lines
+    cv2.line(frame, (ax, 0), (ax, floor_y), (0, 255, 0), 2)     # accel boundary
+    cv2.line(frame, (bx, 0), (bx, floor_y), (0, 80, 255), 2)    # brake boundary
     cv2.line(frame, (0, floor_y), (w, floor_y), (255, 255, 0), 2)
-    cv2.putText(frame, "FLOOR", (5, floor_y - 5),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255,255,0), 1)
 
-    # Zone labels
-    cv2.putText(frame, "ACCEL ZONE", (ax + 5, 20),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 1)
-    cv2.putText(frame, "BRAKE ZONE", (bx - ZONE_DEAD_BAND + 5, 20),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,100,255), 1)
+    cv2.putText(frame, "FLOOR",      (5, floor_y - 5),  cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255,255,0), 1)
+    cv2.putText(frame, "ACCEL ZONE", (ax + 5,   20),    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 1)
+    cv2.putText(frame, "DEAD ZONE",  (bx + 5,   20),    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,200,200), 1)
+    cv2.putText(frame, "BRAKE ZONE", (5,         20),    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,100,255), 1)
 
     # ── Red blob (right foot)
     if state["red_blob"]:
@@ -470,19 +469,21 @@ def main():
 
         if red_blob:
             rx, ry = red_blob[0], red_blob[1]
+            rest_y = floor_y - 60  # approximate neutral Y
 
-            if rx > accel_zone_x - ZONE_DEAD_BAND:
+            # RIGHT side of frame  →  ACCELERATOR
+            if rx > accel_zone_x:
                 active_pedal = "ACCEL"
-                # Y increases downward; rest_y is floor_y - some offset
-                rest_y = floor_y - 60  # approximate neutral Y (tune if needed)
                 raw_accel = map_value(ry, rest_y, accel_press_y, 0, 255)
 
-            elif rx < accel_zone_x - ZONE_DEAD_BAND:
+            # CENTER of frame  →  BRAKE
+            # Dead zone sits between brake_zone_x and accel_zone_x
+            elif rx < brake_zone_x:
                 active_pedal = "BRAKE"
-                rest_y = floor_y - 60
                 raw_brake = map_value(ry, rest_y, brake_press_y, 0, 255)
 
-            # else: dead zone — no pedal active
+    # else: foot is in the dead band between brake_zone_x and accel_zone_x
+    # → no pedal active, both stay 0
 
         # ── Left foot: clutch
         raw_clutch = 0

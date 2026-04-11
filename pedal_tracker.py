@@ -262,8 +262,9 @@ def run_calibration(cap):
     return calib
 
 
+
 # ─────────────────────────────────────────────
-#  PREVIEW OVERLAY DRAWING
+#  PREVIEW OVERLAY DRAWING  (replace entire draw_preview function)
 # ─────────────────────────────────────────────
 
 def draw_preview(frame, calib, state):
@@ -271,31 +272,30 @@ def draw_preview(frame, calib, state):
     h, w = frame.shape[:2]
     overlay = frame.copy()
 
-    # ── Zone boundaries
-    ax = int(calib.get("accel_zone_x", w * 0.7))   # right edge — accel starts here
-    bx = int(calib.get("brake_zone_x", w * 0.4))    # center — brake zone up to here
+    ax = int(calib.get("accel_zone_x", w * 0.35))   # right of this = brake zone
+    bx = int(calib.get("brake_zone_x", w * 0.70))   # right of this = clutch/unused zone
     floor_y = int(calib.get("floor_y", h - 20))
 
-    # Accel zone (RIGHT side) — green tint
-    cv2.rectangle(overlay, (ax, 0), (w, floor_y), (0, 80, 0), -1)
+    # Accel zone (LEFT side) — green tint
+    cv2.rectangle(overlay, (0,  0), (ax, floor_y), (0, 80, 0),  -1)
 
-    # Dead zone between brake and accel — yellow tint
-    cv2.rectangle(overlay, (bx, 0), (ax, floor_y), (0, 80, 80), -1)
+    # Brake zone (MIDDLE) — red tint
+    cv2.rectangle(overlay, (ax, 0), (bx, floor_y), (0, 0, 80),  -1)
 
-    # Brake zone (CENTER / left of bx) — red tint
-    cv2.rectangle(overlay, (0, 0), (bx, floor_y), (0, 0, 80), -1)
+    # Clutch/unused zone (RIGHT side) — grey tint
+    cv2.rectangle(overlay, (bx, 0), (w,  floor_y), (50, 50, 50), -1)
 
     cv2.addWeighted(overlay, 0.3, frame, 0.7, 0, frame)
 
     # Divider lines
-    cv2.line(frame, (ax, 0), (ax, floor_y), (0, 255, 0), 2)     # accel boundary
-    cv2.line(frame, (bx, 0), (bx, floor_y), (0, 80, 255), 2)    # brake boundary
+    cv2.line(frame, (ax, 0), (ax, floor_y), (0, 255, 0),   2)   # accel/brake boundary
+    cv2.line(frame, (bx, 0), (bx, floor_y), (0, 80, 255),  2)   # brake/clutch boundary
     cv2.line(frame, (0, floor_y), (w, floor_y), (255, 255, 0), 2)
 
-    cv2.putText(frame, "FLOOR",      (5, floor_y - 5),  cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255,255,0), 1)
-    cv2.putText(frame, "ACCEL ZONE", (ax + 5,   20),    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 1)
-    cv2.putText(frame, "DEAD ZONE",  (bx + 5,   20),    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,200,200), 1)
-    cv2.putText(frame, "BRAKE ZONE", (5,         20),    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,100,255), 1)
+    cv2.putText(frame, "FLOOR",      (5, floor_y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255,255,0),  1)
+    cv2.putText(frame, "ACCEL ZONE", (5,          20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0),    1)
+    cv2.putText(frame, "BRAKE ZONE", (ax + 5,     20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,100,255),  1)
+    cv2.putText(frame, "CLUTCH AREA",(bx + 5,     20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (150,150,150),1)
 
     # ── Red blob (right foot)
     if state["red_blob"]:
@@ -340,11 +340,8 @@ def draw_preview(frame, calib, state):
     draw_bar("BRAKE",  state["brake"],  (0, 80, 255),  gap)
     draw_bar("CLUTCH", state["clutch"], (0, 220, 220), gap*2)
 
-    # ── FPS
     cv2.putText(frame, f"FPS: {state['fps']:.1f}",
                 (w - 90, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200,200,200), 1)
-
-    # ── Controls reminder
     cv2.putText(frame, "R=Recalib  P=Toggle Preview  Q=Quit",
                 (10, h - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (150,150,150), 1)
 
@@ -470,15 +467,14 @@ def main():
 
         if red_blob:
             rx, ry = red_blob[0], red_blob[1]
-            rest_y = floor_y - 60  # approximate neutral Y
+            rest_y = floor_y - 180  # approximate neutral Y
 
-            # RIGHT side of frame  →  ACCELERATOR
-            if rx > accel_zone_x:
+            # LEFT side of frame → ACCELERATOR
+            if rx < accel_zone_x:
                 active_pedal = "ACCEL"
                 raw_accel = map_value(ry, rest_y, accel_press_y, 0, 255)
 
-            # CENTER of frame  →  BRAKE
-            # Dead zone sits between brake_zone_x and accel_zone_x
+            # MIDDLE of frame → BRAKE
             elif rx < brake_zone_x:
                 active_pedal = "BRAKE"
                 raw_brake = map_value(ry, rest_y, brake_press_y, 0, 255)

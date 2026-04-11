@@ -1,11 +1,11 @@
 {
   "frame_width": 640,
   "frame_height": 480,
-  "floor_y": 282,
-  "accel_zone_x": 158,
-  "brake_zone_x": 293,
-  "accel_press_y": 261,
-  "brake_press_y": 257,
-  "clutch_rest_y": 95,
-  "clutch_press_y": 257
+  "floor_y": 371,
+  "accel_zone_x": 192,
+  "brake_zone_x": 328,
+  "accel_press_y": 346,
+  "brake_press_y": 346,
+  "clutch_rest_y": 119,
+  "clutch_press_y": 346
 }

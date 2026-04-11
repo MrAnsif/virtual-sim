@@ -50,10 +50,11 @@ MIN_BLOB_AREA   = 300
 # ─────────────────────────────────────────────
 
 # Red wraps around HSV so needs two ranges
-RED_LOWER_1  = np.array([0,   120,  70])
-RED_UPPER_1  = np.array([10,  255, 255])
-RED_LOWER_2  = np.array([170, 120,  70])
-RED_UPPER_2  = np.array([180, 255, 255])
+RED_LOWER_1 = np.array([145, 120, 120])
+RED_UPPER_1 = np.array([165, 255, 255])
+
+RED_LOWER_2 = np.array([145, 120, 120])
+RED_UPPER_2 = np.array([165, 255, 255])
 
 # Yellow
 YELLOW_LOWER = np.array([18, 100, 100])

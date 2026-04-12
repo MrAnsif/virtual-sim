@@ -26,13 +26,14 @@ import vgamepad as vg
 import json
 import os
 import time
+from steering import SteeringInput
 
 # ─────────────────────────────────────────────
 #  CONFIG
 # ─────────────────────────────────────────────
 
 PREVIEW         = True          # Show camera output window
-CAMERA_INDEX    = 1            # Change if wrong camera is used
+CAMERA_INDEX    = 0            # Change if wrong camera is used
 TARGET_FPS      = 30
 CALIB_FILE      = "pedal_calib.json"
 
@@ -318,8 +319,9 @@ def draw_preview(frame, calib, state):
         cv2.putText(frame, f"X:{cx} Y:{cy}",
                     (cx + 10, cy + 15), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (100,200,200), 1)
 
-    # ── Pedal value bars (bottom-left HUD)
-    hud_x, hud_y = 10, h - 120
+    
+# ── Pedal value bars + steering bar (bottom-left HUD)
+    hud_x, hud_y = 10, h - 150   # shifted up by one row to fit steering bar
     bar_w, bar_h = 150, 18
     gap = 26
 
@@ -340,6 +342,49 @@ def draw_preview(frame, calib, state):
     draw_bar("BRAKE",  state["brake"],  (0, 80, 255),  gap)
     draw_bar("CLUTCH", state["clutch"], (0, 220, 220), gap*2)
 
+    # ── Steering bar (centered, bi-directional)
+    steer_y_off = gap * 3
+    steer_val   = state.get("steering", 0)            # -32768 to 32767
+    center_x    = hud_x + bar_w // 2                  # mid-point of bar
+    pct_steer   = steer_val / 32767.0                  # -1.0 to +1.0
+    fill_len    = int((bar_w // 2) * abs(pct_steer))
+    direction   = "L" if pct_steer < 0 else "R"
+    pct_display = int(abs(pct_steer) * 100)
+
+    # Background
+    cv2.rectangle(frame,
+                  (hud_x, hud_y + steer_y_off),
+                  (hud_x + bar_w, hud_y + steer_y_off + bar_h),
+                  (50, 50, 50), -1)
+
+    # Fill from center outward
+    if pct_steer < 0:
+        cv2.rectangle(frame,
+                      (center_x - fill_len, hud_y + steer_y_off),
+                      (center_x,            hud_y + steer_y_off + bar_h),
+                      (0, 165, 255), -1)   # orange = left
+    else:
+        cv2.rectangle(frame,
+                      (center_x,            hud_y + steer_y_off),
+                      (center_x + fill_len, hud_y + steer_y_off + bar_h),
+                      (255, 200, 0), -1)   # cyan-yellow = right
+
+    # Center marker line
+    cv2.line(frame,
+             (center_x, hud_y + steer_y_off),
+             (center_x, hud_y + steer_y_off + bar_h),
+             (255, 255, 255), 1)
+
+    # Border
+    cv2.rectangle(frame,
+                  (hud_x, hud_y + steer_y_off),
+                  (hud_x + bar_w, hud_y + steer_y_off + bar_h),
+                  (180, 180, 180), 1)
+
+    cv2.putText(frame, f"STEER: {direction} {pct_display}%",
+                (hud_x + bar_w + 8, hud_y + steer_y_off + 13),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 100), 1)
+
     cv2.putText(frame, f"FPS: {state['fps']:.1f}",
                 (w - 90, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200,200,200), 1)
     cv2.putText(frame, "R=Recalib  P=Toggle Preview  Q=Quit",
@@ -354,6 +399,7 @@ def draw_preview(frame, calib, state):
 
 def main():
     global PREVIEW
+    steering = SteeringInput()
 
     print("=" * 55)
     print("  FOOT PEDAL TRACKER — Starting")
@@ -375,6 +421,7 @@ def main():
         print("[INFO] Running first-time calibration...")
         calib = run_calibration(cap)
 
+    steering = SteeringInput()
     # Init virtual gamepad
     try:
         gamepad = vg.VX360Gamepad()
@@ -398,6 +445,7 @@ def main():
         "accel":        0,
         "brake":        0,
         "clutch":       0,
+        "steering":     0,
         "fps":          0.0,
     }
 
@@ -505,6 +553,7 @@ def main():
         gamepad.right_trigger(value=out_accel)
         gamepad.left_trigger(value=out_brake)
         gamepad.left_joystick(x_value=0, y_value=clutch_axis)
+        gamepad.right_joystick(x_value=steering.get_steering_axis(), y_value=0)  # ← new
         gamepad.update()
 
         # ── Update state for preview
@@ -521,6 +570,7 @@ def main():
         state["accel"]        = out_accel
         state["brake"]        = out_brake
         state["clutch"]       = out_clutch
+        state["steering"] = steering.get_steering_axis()
 
         # ── Print to console
         print(f"\r  ACCEL: {out_accel:3d}/255  "
@@ -558,6 +608,7 @@ def main():
     gamepad.update()
 
     cap.release()
+    steering.close()
     cv2.destroyAllWindows()
     print("[INFO] Stopped cleanly.")
 

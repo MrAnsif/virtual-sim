@@ -1,8 +1,10 @@
 """
 =============================================================
   STEERING INPUT MODULE
-  Reads steering axis from Monect (or any virtual joystick)
-  and returns a value ready to send to vgamepad right stick X.
+  Reads from Monect vJoy:
+    Axis 1       → Steering (right stick X)
+    Button 0     → Downshift (gamepad button)
+    Button 1     → Upshift   (gamepad button)
 
   REQUIREMENTS:
       pip install pygame
@@ -14,13 +16,11 @@
 
 import pygame
 
-# Partial name to match against — case-insensitive substring match.
-# "xbox 360" will match Monect's "Xbox 360 Controller".
-# Change this if Monect shows a different name on your system.
-MONECT_NAME_HINT = "xbox 360"
+MONECT_NAME_HINT = "vjoy"       # case-insensitive substring match
 
-# Axis index for steering (A0 confirmed from diagnosis)
-STEERING_AXIS = 0
+STEERING_AXIS    = 1            # confirmed from vjoy_inspector
+DOWNSHIFT_BUTTON = 0            # confirmed from vjoy_inspector
+UPSHIFT_BUTTON   = 1            # confirmed from vjoy_inspector
 
 
 class SteeringInput:
@@ -28,66 +28,76 @@ class SteeringInput:
     def __init__(self):
         pygame.init()
         pygame.joystick.init()
-        self._joystick = None
-        self._joystick_index = None
+        self._joystick  = None
         self._connect()
 
     def _connect(self):
         count = pygame.joystick.get_count()
         if count == 0:
-            print("[STEERING] No joystick found. Steering will default to center.")
+            print("[STEERING] No joystick found. Steering/gear input will be inactive.")
             return
-
-        # Find the FIRST joystick whose name matches the hint
-        # that is NOT the vgamepad we created (vgamepad registers after us)
         for i in range(count):
             j = pygame.joystick.Joystick(i)
             j.init()
             if MONECT_NAME_HINT.lower() in j.get_name().lower():
                 self._joystick = j
-                self._joystick_index = i
                 print(f"[STEERING] Connected: [{i}] {j.get_name()}")
                 return
-
         print(f"[STEERING] No joystick matching '{MONECT_NAME_HINT}' found.")
-        print(f"[STEERING] Available joysticks:")
+        print("[STEERING] Available joysticks:")
         for i in range(count):
-            j = pygame.joystick.Joystick(i)
-            print(f"           [{i}] {j.get_name()}")
+            print(f"           [{i}] {pygame.joystick.Joystick(i).get_name()}")
         print("[STEERING] Update MONECT_NAME_HINT in steering_input.py to match.")
 
     def refresh(self):
-        """
-        Call this if vgamepad was created after SteeringInput and the wrong
-        controller is being read. Re-scans and picks the correct joystick
-        by name, skipping any newly added virtual controllers if possible.
-        """
+        """Re-scan joysticks. Call if controller list changed at runtime."""
         pygame.joystick.quit()
         pygame.joystick.init()
         self._joystick = None
         self._connect()
 
+    def poll(self):
+        """
+        Call ONCE per frame — pumps pygame events so all getters
+        below reflect the latest state.
+        """
+        if self._joystick:
+            pygame.event.pump()
+
     def get_steering_axis(self) -> int:
-        """
-        Returns steering value as int in range -32768 to 32767.
-        Returns 0 (center) if no joystick is connected.
-        """
+        """Steering as int -32768 to 32767. 0 = center."""
         if not self._joystick:
             return 0
         try:
-            pygame.event.pump()
-            raw = self._joystick.get_axis(STEERING_AXIS)   # -1.0 to +1.0
-            value = int(raw * 32767)
-            return max(-32768, min(32767, value))
+            raw = self._joystick.get_axis(STEERING_AXIS)
+            return max(-32768, min(32767, int(raw * 32767)))
         except Exception:
             return 0
 
+    def get_downshift(self) -> bool:
+        """True while downshift button is held."""
+        if not self._joystick:
+            return False
+        try:
+            return bool(self._joystick.get_button(DOWNSHIFT_BUTTON))
+        except Exception:
+            return False
+
+    def get_upshift(self) -> bool:
+        """True while upshift button is held."""
+        if not self._joystick:
+            return False
+        try:
+            return bool(self._joystick.get_button(UPSHIFT_BUTTON))
+        except Exception:
+            return False
+
     def close(self):
         pygame.quit()
+        print("[STEERING] Stopped.")
 
     @staticmethod
     def list_joysticks():
-        """Run once standalone to find the correct MONECT_NAME_HINT."""
         pygame.init()
         pygame.joystick.init()
         count = pygame.joystick.get_count()

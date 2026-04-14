@@ -33,8 +33,8 @@ from steering import SteeringInput
 # ─────────────────────────────────────────────
 
 PREVIEW         = True
-CAMERA_INDEX    = 0
-TARGET_FPS      = 30
+CAMERA_INDEX    = 2
+TARGET_FPS      = 24
 CALIB_FILE      = "pedal_calib.json"
 
 SMOOTHING       = 0.55

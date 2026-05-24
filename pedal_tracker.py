@@ -33,7 +33,7 @@ from steering import SteeringInput
 # ─────────────────────────────────────────────
 
 PREVIEW         = True
-CAMERA_INDEX    = 2
+CAMERA_INDEX    = 0
 TARGET_FPS      = 24
 CALIB_FILE      = "pedal_calib.json"
 
@@ -486,7 +486,7 @@ def main():
         upshift        = steering.get_upshift()
 
         # ── Send merged output to virtual gamepad
-        clutch_axis = map_value(out_clutch, 0, 255, -32768, 32767)
+        clutch_axis = map_value(out_clutch, 0, 255, 0, 32767)
         gamepad.right_trigger(value=out_accel)
         gamepad.left_trigger(value=out_brake)
         gamepad.left_joystick(x_value=0, y_value=clutch_axis)

@@ -41,6 +41,8 @@ SMOOTHING       = 0.55
 ZONE_DEAD_BAND  = 30
 MIN_BLOB_AREA   = 300
 
+CLUTCH_THRESHOLD = 80           # 0-255: above this = clutch pressed (A button held)
+
 # ─────────────────────────────────────────────
 #  HSV COLOR RANGES
 # ─────────────────────────────────────────────
@@ -279,7 +281,7 @@ def draw_preview(frame, calib, state):
                     (cx + 10, cy + 15), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (100,200,200), 1)
 
     # ── HUD bars
-    hud_x, hud_y = 10, h - 180
+    hud_x, hud_y = 10, h - 210
     bar_w, bar_h = 150, 18
     gap = 26
 
@@ -324,19 +326,34 @@ def draw_preview(frame, calib, state):
                 (hud_x + bar_w + 8, hud_y + steer_y_off + 13),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200,200,100), 1)
 
-    # ── Gear shift buttons
+    # ── Gear shift + Handbrake + Horn buttons
     btn_y_off = gap * 4
-    down_col  = (0, 200, 255) if state.get("downshift") else (60, 60, 60)
-    up_col    = (0, 255, 100) if state.get("upshift")   else (60, 60, 60)
-    cv2.rectangle(frame, (hud_x,          hud_y + btn_y_off),
-                  (hud_x + 68,            hud_y + btn_y_off + bar_h), down_col, -1)
-    cv2.rectangle(frame, (hud_x + 76,     hud_y + btn_y_off),
-                  (hud_x + bar_w,         hud_y + btn_y_off + bar_h), up_col,   -1)
+    down_col  = (0, 200, 255) if state.get("downshift")  else (60, 60, 60)
+    up_col    = (0, 255, 100) if state.get("upshift")    else (60, 60, 60)
+    hb_col    = (0, 60,  255) if state.get("handbrake")  else (60, 60, 60)
+    horn_col  = (255, 200, 0) if state.get("horn")       else (60, 60, 60)
+
+    cv2.rectangle(frame, (hud_x,        hud_y + btn_y_off),
+                  (hud_x + 68,          hud_y + btn_y_off + bar_h), down_col, -1)
+    cv2.rectangle(frame, (hud_x + 76,   hud_y + btn_y_off),
+                  (hud_x + bar_w,       hud_y + btn_y_off + bar_h), up_col,   -1)
     cv2.putText(frame, "DN SHIFT",
-                (hud_x + 4,       hud_y + btn_y_off + 13),
+                (hud_x + 4,     hud_y + btn_y_off + 13),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0,0,0), 1)
     cv2.putText(frame, "UP SHIFT",
-                (hud_x + 80,      hud_y + btn_y_off + 13),
+                (hud_x + 80,    hud_y + btn_y_off + 13),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0,0,0), 1)
+
+    hb_y_off = gap * 5
+    cv2.rectangle(frame, (hud_x,        hud_y + hb_y_off),
+                  (hud_x + 68,          hud_y + hb_y_off + bar_h), hb_col,   -1)
+    cv2.rectangle(frame, (hud_x + 76,   hud_y + hb_y_off),
+                  (hud_x + bar_w,       hud_y + hb_y_off + bar_h), horn_col, -1)
+    cv2.putText(frame, "H.BRAKE",
+                (hud_x + 4,     hud_y + hb_y_off + 13),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255,255,255), 1)
+    cv2.putText(frame, "HORN",
+                (hud_x + 80,    hud_y + hb_y_off + 13),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0,0,0), 1)
 
     cv2.putText(frame, f"FPS: {state['fps']:.1f}",
@@ -400,6 +417,8 @@ def main():
         "steering":     0,
         "downshift":    False,
         "upshift":      False,
+        "handbrake":    False,
+        "horn":         False,
         "fps":          0.0,
     }
 
@@ -479,28 +498,48 @@ def main():
         out_brake  = int(smooth_brake)
         out_clutch = int(smooth_clutch)
 
-        # ── Read steering + gear buttons
+        # ── Read steering + all buttons
         steering.poll()
         steering_value = steering.get_steering_axis()
         downshift      = steering.get_downshift()
         upshift        = steering.get_upshift()
+        handbrake      = steering.get_handbrake()
+        horn           = steering.get_horn()
 
         # ── Send merged output to virtual gamepad
-        clutch_axis = map_value(out_clutch, 0, 255, 0, 32767)
         gamepad.right_trigger(value=out_accel)
         gamepad.left_trigger(value=out_brake)
-        gamepad.left_joystick(x_value=0, y_value=clutch_axis)
         gamepad.right_joystick(x_value=steering_value, y_value=0)
 
+        # Clutch → A Button (press when above threshold)
+        if out_clutch > CLUTCH_THRESHOLD:
+            gamepad.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_A)
+        else:
+            gamepad.release_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_A)
+
+        # Downshift → B Button
         if downshift:
+            gamepad.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_B)
+        else:
+            gamepad.release_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_B)
+
+        # Upshift → X Button
+        if upshift:
             gamepad.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_X)
         else:
             gamepad.release_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_X)
 
-        if upshift:
-            gamepad.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_B)
+        # Handbrake → LB
+        if handbrake:
+            gamepad.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_LEFT_SHOULDER)
         else:
-            gamepad.release_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_B)
+            gamepad.release_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_LEFT_SHOULDER)
+
+        # Horn → RS Button
+        if horn:
+            gamepad.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_RIGHT_THUMB)
+        else:
+            gamepad.release_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_RIGHT_THUMB)
 
         gamepad.update()
 
@@ -521,13 +560,17 @@ def main():
         state["steering"]     = steering_value
         state["downshift"]    = downshift
         state["upshift"]      = upshift
+        state["handbrake"]    = handbrake
+        state["horn"]         = horn
 
         print(f"\r  ACCEL: {out_accel:3d}/255  "
               f"BRAKE: {out_brake:3d}/255  "
               f"CLUTCH: {out_clutch:3d}/255  "
               f"STEER: {steering_value:+6d}  "
-              f"DN: {'▼' if downshift else ' '}  "
-              f"UP: {'▲' if upshift   else ' '}  "
+              f"DN: {'▼' if downshift  else ' '}  "
+              f"UP: {'▲' if upshift    else ' '}  "
+              f"HB: {'■' if handbrake  else ' '}  "
+              f"HORN: {'♪' if horn     else ' '}  "
               f"| FPS: {state['fps']:.1f}   ", end="", flush=True)
 
         if PREVIEW:
@@ -549,10 +592,12 @@ def main():
     # ── Cleanup
     gamepad.right_trigger(value=0)
     gamepad.left_trigger(value=0)
-    gamepad.left_joystick(x_value=0, y_value=0)
     gamepad.right_joystick(x_value=0, y_value=0)
-    gamepad.release_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_X)
+    gamepad.release_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_A)
     gamepad.release_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_B)
+    gamepad.release_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_X)
+    gamepad.release_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_LEFT_SHOULDER)
+    gamepad.release_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_RIGHT_THUMB)
     gamepad.update()
 
     cap.release()

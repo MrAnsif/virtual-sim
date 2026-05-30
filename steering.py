@@ -3,24 +3,28 @@
   STEERING INPUT MODULE
   Reads from Monect vJoy:
     Axis 1       → Steering (right stick X)
-    Button 0     → Downshift (gamepad button)
-    Button 1     → Upshift   (gamepad button)
+    Button 0     → Downshift (B button)
+    Button 1     → Upshift   (X button)
+    Button 2     → Handbrake (LB button)
+    Button 3     → Horn      (RS button)
 
   REQUIREMENTS:
       pip install pygame
 
   USAGE:
-      from steering_input import SteeringInput
+      from steering import SteeringInput
 =============================================================
 """
 
 import pygame
 
-MONECT_NAME_HINT = "vjoy"       # case-insensitive substring match
+MONECT_NAME_HINT  = "vjoy"       # case-insensitive substring match
 
-STEERING_AXIS    = 1            # confirmed from vjoy_inspector
-DOWNSHIFT_BUTTON = 0            # confirmed from vjoy_inspector
-UPSHIFT_BUTTON   = 1            # confirmed from vjoy_inspector
+STEERING_AXIS     = 1            # confirmed from vjoy_inspector
+DOWNSHIFT_BUTTON  = 0            # confirmed from vjoy_inspector
+UPSHIFT_BUTTON    = 1            # confirmed from vjoy_inspector
+HANDBRAKE_BUTTON  = 2            # Monect Button 2
+HORN_BUTTON       = 3            # Monect Button 3
 
 
 class SteeringInput:
@@ -47,7 +51,7 @@ class SteeringInput:
         print("[STEERING] Available joysticks:")
         for i in range(count):
             print(f"           [{i}] {pygame.joystick.Joystick(i).get_name()}")
-        print("[STEERING] Update MONECT_NAME_HINT in steering_input.py to match.")
+        print("[STEERING] Update MONECT_NAME_HINT in steering.py to match.")
 
     def refresh(self):
         """Re-scan joysticks. Call if controller list changed at runtime."""
@@ -89,6 +93,24 @@ class SteeringInput:
             return False
         try:
             return bool(self._joystick.get_button(UPSHIFT_BUTTON))
+        except Exception:
+            return False
+
+    def get_handbrake(self) -> bool:
+        """True while handbrake button is held."""
+        if not self._joystick:
+            return False
+        try:
+            return bool(self._joystick.get_button(HANDBRAKE_BUTTON))
+        except Exception:
+            return False
+
+    def get_horn(self) -> bool:
+        """True while horn button is held."""
+        if not self._joystick:
+            return False
+        try:
+            return bool(self._joystick.get_button(HORN_BUTTON))
         except Exception:
             return False
 

@@ -21,8 +21,8 @@ import pygame
 MONECT_NAME_HINT  = "vjoy"       # case-insensitive substring match
 
 STEERING_AXIS     = 1            # confirmed from vjoy_inspector
-DOWNSHIFT_BUTTON  = 0            # confirmed from vjoy_inspector
-UPSHIFT_BUTTON    = 1            # confirmed from vjoy_inspector
+DOWNSHIFT_BUTTON  = 1            # swapped — was inverted
+UPSHIFT_BUTTON    = 0            # swapped — was inverted
 HANDBRAKE_BUTTON  = 2            # Monect Button 2
 HORN_BUTTON       = 3            # Monect Button 3
 

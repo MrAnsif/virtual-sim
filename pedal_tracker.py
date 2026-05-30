@@ -31,6 +31,7 @@ CALIB_FILE      = "pedal_calib.json"
 SMOOTHING        = 0.55
 MIN_BLOB_AREA    = 300
 CLUTCH_THRESHOLD = 80           # 0-255: above = clutch A-button pressed
+CLUTCH_HOLD_FRAMES = 6         # frames to hold last clutch value if blob lost
 
 # Detection runs on a downscaled frame to save CPU
 DETECT_W, DETECT_H = 480, 270  # half of 960x540; adjust if camera differs
@@ -271,8 +272,8 @@ def draw_preview(frame, calib, state):
     uc = (0,255,100) if state.get("upshift")   else (60,60,60)
     cv2.rectangle(frame,(hx,hy+by1),(hx+68,hy+by1+bh),dc,-1)
     cv2.rectangle(frame,(hx+76,hy+by1),(hx+bw,hy+by1+bh),uc,-1)
-    cv2.putText(frame,"DN SHIFT",(hx+4,hy+by1+13),  cv2.FONT_HERSHEY_SIMPLEX,0.4,(0,0,0),1)
-    cv2.putText(frame,"UP SHIFT",(hx+80,hy+by1+13), cv2.FONT_HERSHEY_SIMPLEX,0.4,(0,0,0),1)
+    cv2.putText(frame,"UP SHIFT",(hx+4,hy+by1+13),  cv2.FONT_HERSHEY_SIMPLEX,0.4,(0,0,0),1)
+    cv2.putText(frame,"DN SHIFT",(hx+80,hy+by1+13), cv2.FONT_HERSHEY_SIMPLEX,0.4,(0,0,0),1)
 
     # Buttons row 2: handbrake + horn
     by2 = gap*5
@@ -296,17 +297,22 @@ def draw_preview(frame, calib, state):
 class GamepadManager:
     """Wraps vgamepad and only flushes update() when output changed."""
 
-    BTN_A  = vg.XUSB_BUTTON.XUSB_GAMEPAD_A
-    BTN_B  = vg.XUSB_BUTTON.XUSB_GAMEPAD_B
-    BTN_X  = vg.XUSB_BUTTON.XUSB_GAMEPAD_X
     BTN_LB = vg.XUSB_BUTTON.XUSB_GAMEPAD_LEFT_SHOULDER
+    BTN_RB = vg.XUSB_BUTTON.XUSB_GAMEPAD_RIGHT_SHOULDER
     BTN_RS = vg.XUSB_BUTTON.XUSB_GAMEPAD_RIGHT_THUMB
+
+    # RS joystick Y axis values
+    RS_UP   =  32767   # Clutch   → RS UP
+    RS_DOWN = -32767   # Handbrake → RS DOWN
+    RS_IDLE =  0
 
     def __init__(self):
         self.gp = vg.VX360Gamepad()
         self._rt = self._lt = self._steer = 0
-        self._btns = {self.BTN_A:False, self.BTN_B:False,
-                      self.BTN_X:False, self.BTN_LB:False, self.BTN_RS:False}
+        self._rs_y = 0          # tracks current RS Y value
+        self._clutch_pressed   = False
+        self._handbrake_pressed = False
+        self._btns = {self.BTN_LB: False, self.BTN_RB: False, self.BTN_RS: False}
         self._dirty = False
 
     def _set_btn(self, btn, pressed):
@@ -316,6 +322,29 @@ class GamepadManager:
             self._btns[btn] = pressed
             self._dirty = True
 
+    def _update_rs_y(self):
+        """RS Y: clutch (up) takes priority over handbrake (down)."""
+        if self._clutch_pressed:
+            target = self.RS_UP
+        elif self._handbrake_pressed:
+            target = self.RS_DOWN
+        else:
+            target = self.RS_IDLE
+        if target != self._rs_y:
+            self.gp.right_joystick(x_value=self._steer, y_value=target)
+            self._rs_y = target
+            self._dirty = True
+
+    def _set_joystick_rs_up(self, pressed):
+        if self._clutch_pressed != pressed:
+            self._clutch_pressed = pressed
+            self._update_rs_y()
+
+    def _set_joystick_rs_down(self, pressed):
+        if self._handbrake_pressed != pressed:
+            self._handbrake_pressed = pressed
+            self._update_rs_y()
+
     def set_triggers(self, rt, lt):
         if rt != self._rt:
             self.gp.right_trigger(value=rt); self._rt = rt; self._dirty = True
@@ -324,13 +353,14 @@ class GamepadManager:
 
     def set_steering(self, x):
         if x != self._steer:
-            self.gp.left_joystick(x_value=x, y_value=0)
-            self._steer = x; self._dirty = True
+            self._steer = x
+            self.gp.left_joystick(x_value=x, y_value=0)   # FH4 steering = Left Stick X
+            self._dirty = True
 
-    def set_clutch(self, val):   self._set_btn(self.BTN_A,  val > CLUTCH_THRESHOLD)
-    def set_downshift(self, v):  self._set_btn(self.BTN_B,  v)
-    def set_upshift(self, v):    self._set_btn(self.BTN_X,  v)
-    def set_handbrake(self, v):  self._set_btn(self.BTN_LB, v)
+    def set_clutch(self, val):   self._set_joystick_rs_up(val > CLUTCH_THRESHOLD)
+    def set_downshift(self, v):  self._set_btn(self.BTN_RB, v)
+    def set_upshift(self, v):    self._set_btn(self.BTN_LB, v)
+    def set_handbrake(self, v):  self._set_joystick_rs_down(v)
     def set_horn(self, v):       self._set_btn(self.BTN_RS, v)
 
     def flush(self):
@@ -392,6 +422,8 @@ def main():
 
     smooth_accel = smooth_brake = smooth_clutch = 0.0
     ONE_MINUS_S  = 1.0 - SMOOTHING
+    clutch_lost_frames = 0          # counts consecutive frames with no yellow blob
+    last_raw_clutch    = 0          # last known clutch value before blob was lost
 
     state = {
         "red_blob": None, "yellow_blob": None, "active_pedal": "NONE",
@@ -477,10 +509,15 @@ def main():
                 active_pedal = "BRAKE"
                 raw_brake = map_value(ry, rest_y, sc["brake_press_y"], 0, 255)
 
-        raw_clutch = 0
         if yellow_res:
             ry = yellow_res[1] + roi_top_s
             raw_clutch = map_value(ry, sc["clutch_rest_y"], sc["clutch_press_y"], 0, 255)
+            last_raw_clutch    = raw_clutch
+            clutch_lost_frames = 0
+        else:
+            clutch_lost_frames += 1
+            # Hold last value for CLUTCH_HOLD_FRAMES, then release gradually
+            raw_clutch = last_raw_clutch if clutch_lost_frames <= CLUTCH_HOLD_FRAMES else 0
 
         smooth_accel  = SMOOTHING * smooth_accel  + ONE_MINUS_S * raw_accel
         smooth_brake  = SMOOTHING * smooth_brake  + ONE_MINUS_S * raw_brake

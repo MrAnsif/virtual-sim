@@ -23,7 +23,7 @@ from steering import SteeringInput
 # ─────────────────────────────────────────────
 #  CONFIG
 # ─────────────────────────────────────────────
-PREVIEW         = True
+PREVIEW         = False
 CAMERA_INDEX    = 0
 TARGET_FPS      = 24
 CALIB_FILE      = "pedal_calib.json"

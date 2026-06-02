@@ -14,6 +14,7 @@ CONTROLS:
 =============================================================
 """
 
+from hud_overlay import HUDOverlay
 import cv2
 import numpy as np
 import vgamepad as vg
@@ -402,13 +403,15 @@ def main():
     CAM_H, CAM_W = probe.shape[:2]
     SCALE_X = DETECT_W / CAM_W
     SCALE_Y = DETECT_H / CAM_H
-    print(f"[INFO] Camera: {CAM_W}x{CAM_H} → detect at {DETECT_W}x{DETECT_H}")
+    print(f"[INFO] Camera: {CAM_W}x{CAM_H} -> detect at {DETECT_W}x{DETECT_H}")
 
     calib = load_calibration()
     if not os.path.exists(CALIB_FILE):
         calib = run_calibration(cap)
 
     steering_in = SteeringInput()
+    hud = HUDOverlay()
+    print("[INFO] HUD overlay created.")
 
     try:
         gpm = GamepadManager()
@@ -564,6 +567,8 @@ def main():
             "handbrake": handbrake, "horn": horn,
         })
 
+        hud.update(state)
+
         # ── Console print (throttled)
         if frame_count % PRINT_EVERY_N == 0:
             print(f"\r  ACCEL:{out_accel:3d}  BRAKE:{out_brake:3d}  "
@@ -595,6 +600,7 @@ def main():
 
     # ── Cleanup
     gpm.reset()
+    hud.close()
     cap.release()
     steering_in.close()
     cv2.destroyAllWindows()
